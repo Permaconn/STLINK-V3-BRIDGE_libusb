@@ -25,8 +25,10 @@
 /* Includes ------------------------------------------------------------------*/
 #include "STLinkUSBDriver.h"
 
+#ifndef WIN32
 #include <algorithm>
 #include <libusb-1.0/libusb.h>
+#endif
 
 #ifdef USING_ERRORLOG
 #include "ErrLog.h"
@@ -89,9 +91,11 @@ public:
 #endif
 
 private:
+#ifndef WIN32
 	libusb_context *ctx = nullptr; //a libusb session
 	libusb_device* devices[256];
 	ssize_t cnt;
+#endif
 	STLinkIf_StatusT EnumDevicesIfRequired(uint32_t *pNumDevices, bool bForceRenum, bool bClearList);
 
 #ifdef WIN32 //Defined for applications for Win32 and Win64.
@@ -102,6 +106,13 @@ private:
 	pSTLink_OpenDevice      STLink_OpenDevice;
 	pSTLink_CloseDevice     STLink_CloseDevice;
 	pSTLink_SendCommand     STLink_SendCommand;
+#else
+	uint32_t STLink_GetNbDevices(TEnumStlinkInterface IfId);
+	uint32_t STLink_GetDeviceInfo2(TEnumStlinkInterface IfId, uint8_t DevIdxInList, TDeviceInfo2 *pInfo, uint32_t InfoSize);
+	uint32_t STLink_OpenDevice(TEnumStlinkInterface IfId, uint8_t DevIdxInList, uint8_t bExclusiveAccess, void ** pHandle);
+	uint32_t STLink_CloseDevice(void * pHandle);
+	uint32_t STLink_SendCommand(void * pHandle, PDeviceRequest pRequest, uint32_t DwTimeOut);
+	uint32_t STLink_Reenumerate(TEnumStlinkInterface IfId, uint8_t bClearList);
 #endif
 
 	void LogTrace(const char *pMessage, ...);
@@ -126,12 +137,6 @@ private:
 	cErrLog *m_pErrLog;
 #endif
 
-	uint32_t STLink_GetNbDevices(TEnumStlinkInterface IfId);
-	uint32_t STLink_GetDeviceInfo2(TEnumStlinkInterface IfId, uint8_t DevIdxInList, TDeviceInfo2 *pInfo, uint32_t InfoSize);
-	uint32_t STLink_OpenDevice(TEnumStlinkInterface IfId, uint8_t DevIdxInList, uint8_t bExclusiveAccess, void ** pHandle);
-	uint32_t STLink_CloseDevice(void * pHandle);
-	uint32_t STLink_SendCommand(void * pHandle, PDeviceRequest pRequest, uint32_t DwTimeOut);
-	uint32_t STLink_Reenumerate(TEnumStlinkInterface IfId, uint8_t bClearList);
 };
 
 #endif //_STLINK_INTERFACE_H

@@ -40,6 +40,9 @@
 
 /* Global variables ----------------------------------------------------------*/
 #ifdef WIN32 //Defined for applications for Win32 and Win64.
+
+#pragma comment (lib, "Shlwapi.lib")
+
 // Create a critical section
 static CRITICAL_SECTION g_csInterface;
 #else
@@ -126,6 +129,8 @@ void STLinkInterface::LogTrace(const char *pMessage, ...)
 	va_end(args);
 #endif
 }
+
+#ifndef WIN32
 
 uint32_t STLinkInterface::STLink_GetNbDevices(TEnumStlinkInterface IfId)
 {
@@ -323,6 +328,8 @@ uint32_t STLinkInterface::STLink_Reenumerate(TEnumStlinkInterface IfId, uint8_t 
 	return SS_OK;
 }
 
+#endif
+
 /**
  * @ingroup INTERFACE
  * @brief If not already done: load the STLinkUSBDriver library (windows only), open log files.
@@ -344,9 +351,75 @@ STLinkIf_StatusT  STLinkInterface::LoadStlinkLibrary(const char *pPathOfProcess)
 	}
 
 	if( m_bApiDllLoaded == false ) {
+#ifndef WIN32
 		int res = libusb_init(&ctx);
 		if (res == 0) {
 			libusb_set_option(ctx, LIBUSB_OPTION_LOG_LEVEL, LIBUSB_LOG_LEVEL_INFO);
+#else
+		// Load the STLinkUSBDriver library only once in a session
+		if( pPathOfProcess != NULL ) {
+			// Memorize the path of process
+#if defined(_MSC_VER) &&  (_MSC_VER >= 1400) /* VC8+ (VS2005) */
+			::strncpy_s(m_pathOfProcess, MAX_PATH, pPathOfProcess, MAX_PATH);
+#else
+			::strncpy(m_pathOfProcess, pPathOfProcess, MAX_PATH);
+#endif
+		}
+
+#ifdef WIN32 //Defined for applications for Win32 and Win64.
+		if( m_hMod == NULL ) {
+			// First try from this DLL path
+			if( pPathOfProcess != NULL ) {
+				char szDllPath[_MAX_PATH];
+#if defined(_MSC_VER) &&  (_MSC_VER >= 1400) /* VC8+ (VS2005) */
+				::strncpy_s(szDllPath, _MAX_PATH, m_pathOfProcess, _MAX_PATH);
+#else
+				::strncpy(szDllPath, m_pathOfProcess, _MAX_PATH);
+#endif
+				// Note: Unicode is not supported (would require T_CHAR szDllPath, to include <tchar.h> 
+				// and to use generic function PathAppend(szDllPath, _T("STLinkUSBDriver.dll")) 
+				::PathAppendA(szDllPath, "STLinkUSBDriver.dll");
+
+				m_hMod = LoadLibraryA(szDllPath);
+			}
+		}
+
+		if( m_hMod == NULL ) {
+			// Second try using the whole procedure for path resolution (including PATH environment variable)
+			m_hMod = LoadLibraryA("STLinkUSBDriver.dll");
+		}
+
+		if( m_hMod == NULL ) {
+			LogTrace("STLinkInterface Failure loading STLinkUSBDriver.dll");
+			ifStatus = STLINKIF_DLL_ERR;
+		}
+
+		if( ifStatus == STLINKIF_NO_ERR ) {
+			LogTrace("STLinkInterface STLinkUSBDriver.dll loaded");
+			if( m_ifId == STLINK_BRIDGE ) {
+				// Get the needed API
+				STLink_Reenumerate    = (pSTLink_Reenumerate)   GetProcAddress(m_hMod, ("STLink_Reenumerate"));
+				STLink_GetNbDevices   = (pSTLink_GetNbDevices)  GetProcAddress(m_hMod, ("STLink_GetNbDevices"));
+				STLink_GetDeviceInfo2 = (pSTLink_GetDeviceInfo2)GetProcAddress(m_hMod, ("STLink_GetDeviceInfo2"));
+				STLink_OpenDevice     = (pSTLink_OpenDevice)    GetProcAddress(m_hMod, ("STLink_OpenDevice"));
+				STLink_CloseDevice    = (pSTLink_CloseDevice)   GetProcAddress(m_hMod, ("STLink_CloseDevice"));
+				STLink_SendCommand    = (pSTLink_SendCommand)   GetProcAddress(m_hMod, ("STLink_SendCommand"));
+
+				// Check if DLL supports at least required function, this is mandatory but not enough for BRIDGE support
+				// STLink_Reenumerate will return SS_BAD_PARAMETER if DLL is too old and Bridge interface is not supported.
+				if( (STLink_Reenumerate == NULL) || (STLink_GetNbDevices == NULL) 
+					|| (STLink_GetDeviceInfo2 == NULL) || (STLink_OpenDevice == NULL) || (STLink_CloseDevice == NULL)
+					|| (STLink_SendCommand == NULL) ) {
+					// TCP routines are required and missing
+					ifStatus = STLINKIF_DLL_ERR;
+				}
+			}
+		}
+#else // !WIN32
+        // nothing to do
+#endif
+		if( ifStatus == STLINKIF_NO_ERR ) {
+#endif
 			m_bApiDllLoaded = true;
 		}
 	}
